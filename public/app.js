@@ -10,11 +10,37 @@ const state = {
   refreshTimer: null
 };
 
-function showView(viewId) {
+function getActiveViewId() {
+  return document.querySelector(".view.active")?.id || null;
+}
+
+function viewHash(viewId) {
+  return `#${viewId.replace(/View$/, "")}`;
+}
+
+function showView(
+  viewId,
+  { historyMode = "push", scroll = true } = {}
+) {
+  const previousViewId = getActiveViewId();
+
+  if (previousViewId === viewId) {
+    return;
+  }
+
   views.forEach((view) => {
     view.classList.toggle("active", view.id === viewId);
   });
-  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  if (historyMode === "push") {
+    window.history.pushState({ viewId }, "", viewHash(viewId));
+  } else if (historyMode === "replace") {
+    window.history.replaceState({ viewId }, "", viewHash(viewId));
+  }
+
+  if (scroll) {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
 }
 
 function showToast(message, type = "success") {
@@ -135,7 +161,14 @@ function renderRoom(data) {
           <div class="participant-item">
             <div class="participant-main">
               <span class="participant-avatar">${getInitials(participant.name)}</span>
-              <strong>${escapeHtml(participant.name)}</strong>
+              <strong>
+                ${escapeHtml(participant.name)}
+                ${
+                  participant.isAdmin
+                    ? '<span class="admin-badge">Admin</span>'
+                    : ""
+                }
+              </strong>
             </div>
 
             ${
@@ -149,7 +182,9 @@ function renderRoom(data) {
             }
 
             ${
-              state.isAdmin && data.room.status === "open"
+              state.isAdmin &&
+              data.room.status === "open" &&
+              !participant.isAdmin
                 ? `<button
                     class="remove-participant"
                     type="button"
@@ -272,7 +307,10 @@ function renderParticipantResult(participant) {
   panel.classList.remove("hidden");
 }
 
-async function loadRoom({ silent = false } = {}) {
+async function loadRoom({
+  silent = false,
+  historyMode = "push"
+} = {}) {
   if (!state.roomCode) {
     return;
   }
@@ -280,7 +318,10 @@ async function loadRoom({ silent = false } = {}) {
   try {
     const data = await request(`/api/rooms/${state.roomCode}`);
     renderRoom(data);
-    showView("roomView");
+    showView("roomView", {
+      historyMode,
+      scroll: historyMode !== "none"
+    });
   } catch (error) {
     if (!silent) {
       showToast(error.message, "error");
@@ -386,7 +427,12 @@ async function removeParticipant(participantId) {
 function startAutoRefresh() {
   window.clearInterval(state.refreshTimer);
   state.refreshTimer = window.setInterval(() => {
-    loadRoom({ silent: true });
+    if (getActiveViewId() === "roomView") {
+      loadRoom({
+        silent: true,
+        historyMode: "none"
+      });
+    }
   }, 2500);
 }
 
@@ -412,11 +458,7 @@ document
   .addEventListener("click", () => showView("adminLoginView"));
 
 document.getElementById("homeButton").addEventListener("click", () => {
-  if (state.roomCode) {
-    loadRoom();
-  } else {
-    showView("homeView");
-  }
+  showView("homeView");
 });
 
 document.getElementById("createRoomForm").addEventListener("submit", async (event) => {
@@ -527,11 +569,41 @@ document
 
 const codeFromUrl = new URLSearchParams(window.location.search).get("room");
 
+window.addEventListener("popstate", (event) => {
+  const targetViewId = event.state?.viewId || "homeView";
+
+  if (targetViewId === "roomView" && state.roomCode) {
+    loadRoom({
+      silent: true,
+      historyMode: "none"
+    });
+    return;
+  }
+
+  showView(targetViewId, {
+    historyMode: "none",
+    scroll: false
+  });
+});
+
 if (codeFromUrl && !state.roomCode) {
   document.querySelector('#joinRoomForm input[name="code"]').value =
     codeFromUrl.toUpperCase();
-  showView("joinView");
+  showView("joinView", { historyMode: "replace" });
 } else if (state.roomCode) {
-  loadRoom();
+  window.history.replaceState(
+    { viewId: "roomView" },
+    "",
+    viewHash("roomView")
+  );
+  loadRoom({
+    historyMode: "none"
+  });
   startAutoRefresh();
+} else {
+  window.history.replaceState(
+    { viewId: "homeView" },
+    "",
+    viewHash("homeView")
+  );
 }

@@ -604,3 +604,19 @@ input:focus {
     width: 100%;
   }
 }
+
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--primary-dark);
+  background: rgba(109, 40, 217, 0.1);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}

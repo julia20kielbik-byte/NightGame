@@ -7,15 +7,7 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const fs = require("fs");
-
-const dataDirectory = process.env.DATA_DIR || __dirname;
-
-if (!fs.existsSync(dataDirectory)) {
-  fs.mkdirSync(dataDirectory, { recursive: true });
-}
-
-const db = new Database(path.join(dataDirectory, "party-groups.db"));
+const db = new Database(path.join(__dirname, "party-groups.db"));
 
 const createRoomCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 
@@ -48,6 +40,7 @@ db.exec(`
     name TEXT NOT NULL,
     session_token TEXT NOT NULL UNIQUE,
     group_id INTEGER,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
@@ -63,6 +56,65 @@ db.exec(`
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
   );
 `);
+
+try {
+  db.prepare(
+    "ALTER TABLE participants ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"
+  ).run();
+} catch (error) {
+  if (!String(error.message).includes("duplicate column name")) {
+    throw error;
+  }
+}
+
+const migrateExistingAdmins = db.transaction(() => {
+  const rooms = db.prepare("SELECT id, admin_name FROM rooms").all();
+
+  const findAdminParticipant = db.prepare(`
+    SELECT id
+    FROM participants
+    WHERE room_id = ? AND is_admin = 1
+    LIMIT 1
+  `);
+
+  const findParticipantByName = db.prepare(`
+    SELECT id
+    FROM participants
+    WHERE room_id = ? AND LOWER(name) = LOWER(?)
+    ORDER BY id
+    LIMIT 1
+  `);
+
+  const markAsAdmin = db.prepare(`
+    UPDATE participants
+    SET is_admin = 1
+    WHERE id = ?
+  `);
+
+  const insertAdmin = db.prepare(`
+    INSERT INTO participants (room_id, name, session_token, is_admin)
+    VALUES (?, ?, ?, 1)
+  `);
+
+  for (const room of rooms) {
+    if (findAdminParticipant.get(room.id)) {
+      continue;
+    }
+
+    const matchingParticipant = findParticipantByName.get(
+      room.id,
+      room.admin_name
+    );
+
+    if (matchingParticipant) {
+      markAsAdmin.run(matchingParticipant.id);
+    } else {
+      insertAdmin.run(room.id, room.admin_name, nanoid(32));
+    }
+  }
+});
+
+migrateExistingAdmins();
 
 const COLORS = [
   { name: "Czerwona", hex: "#ef4444" },
@@ -112,7 +164,7 @@ function requireAdmin(req, res, next) {
 function getRoomState(room, participantToken = null, includeAdminData = false) {
   const participants = db
     .prepare(`
-      SELECT p.id, p.name, p.joined_at, p.group_id,
+      SELECT p.id, p.name, p.joined_at, p.group_id, p.is_admin,
              g.group_number, g.name AS group_name,
              g.color_name, g.color_hex
       FROM participants p
@@ -165,6 +217,7 @@ function getRoomState(room, participantToken = null, includeAdminData = false) {
     participants: participants.map((participant) => ({
       id: participant.id,
       name: participant.name,
+      isAdmin: Boolean(participant.is_admin),
       groupId: participant.group_id,
       groupNumber: participant.group_number,
       groupName: participant.group_name,
@@ -284,10 +337,17 @@ app.post("/api/rooms", async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const adminToken = nanoid(32);
 
-    db.prepare(`
-      INSERT INTO rooms (code, name, admin_name, admin_password_hash, admin_token)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(code, name, adminName, passwordHash, adminToken);
+    db.transaction(() => {
+      const roomResult = db.prepare(`
+        INSERT INTO rooms (code, name, admin_name, admin_password_hash, admin_token)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(code, name, adminName, passwordHash, adminToken);
+
+      db.prepare(`
+        INSERT INTO participants (room_id, name, session_token, is_admin)
+        VALUES (?, ?, ?, 1)
+      `).run(roomResult.lastInsertRowid, adminName, nanoid(32));
+    })();
 
     res.status(201).json({
       code,
@@ -508,13 +568,26 @@ app.delete("/api/rooms/:code/participants/:participantId", requireAdmin, (req, r
       });
     }
 
-    const result = db
-      .prepare("DELETE FROM participants WHERE id = ? AND room_id = ?")
-      .run(Number(req.params.participantId), req.room.id);
+    const participant = db
+      .prepare(`
+        SELECT id, is_admin
+        FROM participants
+        WHERE id = ? AND room_id = ?
+      `)
+      .get(Number(req.params.participantId), req.room.id);
 
-    if (result.changes === 0) {
+    if (!participant) {
       return res.status(404).json({ error: "Nie znaleziono uczestnika." });
     }
+
+    if (participant.is_admin) {
+      return res.status(409).json({
+        error: "Administrator musi pozostać na liście uczestników."
+      });
+    }
+
+    db.prepare("DELETE FROM participants WHERE id = ? AND room_id = ?")
+      .run(participant.id, req.room.id);
 
     res.json({ message: "Uczestnik został usunięty." });
   } catch (error) {

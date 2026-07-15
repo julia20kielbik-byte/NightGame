@@ -68,3 +68,12 @@ party-groups-app/
     ├── styles.css
     └── app.js
 ```
+
+
+## Poprawki nawigacji i administratora
+
+- administrator jest automatycznie uczestnikiem i bierze udział w losowaniu,
+- administrator jest oznaczony etykietą `Admin`,
+- administratora nie można usunąć z listy,
+- automatyczne odświeżanie nie przewija strony do góry,
+- przyciski `Wstecz` i `Dalej` w przeglądarce działają między widokami.
