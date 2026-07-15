@@ -117,6 +117,8 @@ const migrateExistingAdmins = db.transaction(() => {
 migrateExistingAdmins();
 
 const COLORS = [
+  { name: "Czarna", hex: "#000000" },
+  { name: "Biała", hex: "#FEFEFE" },
   { name: "Czerwona", hex: "#ef4444" },
   { name: "Niebieska", hex: "#3b82f6" },
   { name: "Zielona", hex: "#22c55e" },
@@ -124,9 +126,7 @@ const COLORS = [
   { name: "Fioletowa", hex: "#8b5cf6" },
   { name: "Pomarańczowa", hex: "#f97316" },
   { name: "Różowa", hex: "#ec4899" },
-  { name: "Turkusowa", hex: "#14b8a6" },
   { name: "Granatowa", hex: "#1e3a8a" },
-  { name: "Limonkowa", hex: "#84cc16" },
   { name: "Bordowa", hex: "#9f1239" },
   { name: "Brązowa", hex: "#92400e" }
 ];
