@@ -1,0 +1,5 @@
+node_modules/
+party-groups.db
+party-groups.db-shm
+party-groups.db-wal
+.env

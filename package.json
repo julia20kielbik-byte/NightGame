@@ -1,0 +1,20 @@
+{
+  "name": "party-groups-app",
+  "version": "1.0.0",
+  "description": "Aplikacja do losowego dzielenia uczestników imprezy na możliwie równe, kolorowe grupy.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "nanoid": "^5.0.9"
+  }
+}
